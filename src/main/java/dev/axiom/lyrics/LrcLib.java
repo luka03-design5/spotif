@@ -15,11 +15,42 @@ public final class LrcLib {
 
     public static List<LyricsState.LrcLine> fetch(String title, String artist, long durSec) {
         List<LyricsState.LrcLine> r = tryFetch(title, artist, durSec);
+        if (r.isEmpty()) r = search(title, artist, durSec);
         if (r.isEmpty()) {
             String cleaned = title.replaceAll("\\s+-\\s+.*$", "").replaceAll("\\s*\\(.*?\\)", "").trim();
-            if (!cleaned.equals(title)) r = tryFetch(cleaned, artist, durSec);
+            if (!cleaned.isEmpty() && !cleaned.equals(title)) {
+                r = tryFetch(cleaned, artist, durSec);
+                if (r.isEmpty()) r = search(cleaned, artist, durSec);
+            }
         }
         return r;
+    }
+
+    /** Unscharfe Suche, falls der exakte Treffer fehlt: nimmt den Treffer mit der passendsten Länge. */
+    private static List<LyricsState.LrcLine> search(String title, String artist, long durSec) {
+        try {
+            String url = "https://lrclib.net/api/search?track_name=" + enc(title)
+                + "&artist_name=" + enc(artist);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .header("User-Agent", "SpotifyLyricsMod/1.0 (Fabric client mod)").GET().build();
+            HttpResponse<String> r = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            if (r.statusCode() != 200) return List.of();
+            JsonArray arr = JsonParser.parseString(r.body()).getAsJsonArray();
+            JsonObject best = null;
+            double bestDiff = Double.MAX_VALUE;
+            for (JsonElement el : arr) {
+                JsonObject o = el.getAsJsonObject();
+                if (!o.has("syncedLyrics") || o.get("syncedLyrics").isJsonNull()) continue;
+                if (o.get("syncedLyrics").getAsString().isBlank()) continue;
+                double d = o.has("duration") && !o.get("duration").isJsonNull() ? o.get("duration").getAsDouble() : 0;
+                double diff = Math.abs(d - durSec);
+                if (diff < bestDiff) { bestDiff = diff; best = o; }
+            }
+            if (best == null || bestDiff > 10) return List.of();
+            return parse(best.get("syncedLyrics").getAsString());
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private static List<LyricsState.LrcLine> tryFetch(String title, String artist, long durSec) {

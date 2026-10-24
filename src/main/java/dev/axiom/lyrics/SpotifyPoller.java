@@ -62,6 +62,8 @@ public final class SpotifyPoller {
         String title = item.get("name").getAsString();
         String artist = item.getAsJsonArray("artists").get(0).getAsJsonObject().get("name").getAsString();
         long durMs = item.get("duration_ms").getAsLong();
+        LyricsState.title = title;
+        LyricsState.artist = artist;
         String id = item.get("id").isJsonNull() ? title + artist : item.get("id").getAsString();
 
         if (!id.equals(LyricsState.trackId)) {
